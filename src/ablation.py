@@ -11,11 +11,11 @@ from src.models import AVDeepfakeDetector
 from src.models.ablation_models import VisualOnlyDetector, AudioOnlyDetector, ConcatFusionDetector
 from src.utils import evaluate_metrics, evaluate_metrics_multiclass
 from src.utils.config import load_config
-from src.train import collate_fn
+from src.train import collate_fn, set_seed
 
 _DEFAULTS = dict(data_root="data/MELD", out_dir="outputs/ablation",
                  epochs=10, batch_size=8, lr=1e-4, embed_dim=256,
-                 num_workers=4, num_classes=7)
+                 num_workers=4, num_classes=7, seed=42)
 
 
 VARIANTS = {
@@ -26,7 +26,14 @@ VARIANTS = {
 }
 
 
+def _forward(model, frames, mel):
+    """Unwrap (logits, align_loss) for AVDeepfakeDetector; plain logits otherwise."""
+    out = model(frames, mel)
+    return out[0] if isinstance(out, tuple) else out
+
+
 def run_variant(name, model_cls, loader, device, cfg):
+    set_seed(cfg.seed)  # same seed per variant for fair comparison
     model = model_cls(embed_dim=cfg.embed_dim, num_classes=cfg.num_classes).to(device)
     optimizer = torch.optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()), lr=cfg.lr
@@ -38,7 +45,7 @@ def run_variant(name, model_cls, loader, device, cfg):
         for frames, mel, labels in loader["train"]:
             frames, mel, labels = frames.to(device), mel.to(device), labels.to(device)
             optimizer.zero_grad()
-            loss = criterion(model(frames, mel), labels)
+            loss = criterion(_forward(model, frames, mel), labels)
             loss.backward()
             optimizer.step()
 
@@ -47,7 +54,7 @@ def run_variant(name, model_cls, loader, device, cfg):
     with torch.no_grad():
         for frames, mel, labels in loader["val"]:
             frames, mel, labels = frames.to(device), mel.to(device), labels.to(device)
-            probs = torch.softmax(model(frames, mel), dim=1)
+            probs = torch.softmax(_forward(model, frames, mel), dim=1)
             all_preds.extend(probs.argmax(dim=1).cpu().tolist())
             all_labels.extend(labels.cpu().tolist())
             if cfg.num_classes == 2:

@@ -1,9 +1,13 @@
-data_root: data/MELD
-out_dir: outputs
+dataset: fakeavceleb   # meld | fakeavceleb | ffplusplus
+data_root: data/FakeAVCeleb_v1.2/FakeAVCeleb_v1.2
+csv_path: data/FakeAVCeleb_v1.2/{split}.csv
+out_dir: outputs/fakeavceleb
 epochs: 20
 batch_size: 8
 lr: 1e-4
 embed_dim: 256
 freeze_visual: true
 num_workers: 4
-num_classes: 7
+num_classes: 2
+align_weight: 0.1
+seed: 42
