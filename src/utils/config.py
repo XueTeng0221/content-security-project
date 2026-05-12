@@ -1,27 +1,24 @@
-# src/utils/config.py
+import argparse
 import yaml
-from pathlib import Path
-from typing import Any, Dict
+from types import SimpleNamespace
 
-class Config:
-    def __init__(self, config_dict: Dict[str, Any]):
-        for key, value in config_dict.items():
-            if isinstance(value, dict):
-                setattr(self, key, Config(value))
-            else:
-                setattr(self, key, value)
 
-    @classmethod
-    def from_yaml(cls, yaml_path: str) -> "Config":
-        with open(yaml_path, 'r') as f:
-            config_dict = yaml.safe_load(f)
-        return cls(config_dict)
+def load_config(defaults: dict) -> SimpleNamespace:
+    """Load YAML config, then override with any extra CLI args."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", default=None)
+    for k, v in defaults.items():
+        parser.add_argument(f"--{k}", type=type(v) if v is not None else str, default=None)
+    args = parser.parse_args()
 
-    def to_dict(self) -> Dict[str, Any]:
-        result = {}
-        for key, value in self.__dict__.items():
-            if isinstance(value, Config):
-                result[key] = value.to_dict()
-            else:
-                result[key] = value
-        return result
+    cfg = dict(defaults)
+    if args.config:
+        with open(args.config) as f:
+            for k, v in yaml.safe_load(f).items():
+                expected = type(defaults[k]) if k in defaults and defaults[k] is not None else None
+                cfg[k] = expected(v) if expected is not None else v
+    for k in defaults:
+        v = getattr(args, k)
+        if v is not None:
+            cfg[k] = v
+    return SimpleNamespace(**cfg)

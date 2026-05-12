@@ -1,12 +1,12 @@
 __pycache__/
-*.py[cod]
 *$py.class
 *.so
 .Python
-data/raw/
-data/processed/
-data/generated/
 wandb/
 *.pth
 *.ckpt
 .ipynb_checkpoints/
+.claude/
+data/
+.venv/
+.pytest_cache/
