@@ -3,8 +3,8 @@ import random
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.cuda.amp import autocast, GradScaler
-from torch.utils.data import DataLoader
+from torch.cuda.amp import GradScaler
+from torch.utils.data import DataLoader, WeightedRandomSampler
 from src.data import MELDDataset, FakeAVCelebDataset, FFPlusPlusDataset
 from src.data.meld import EMOTION2ID
 from src.models import AVDeepfakeDetector
@@ -41,11 +41,20 @@ def collate_fn(batch):
     return torch.stack(frames), mels_padded, torch.stack(labels)
 
 
+def _balanced_sampler(dataset):
+    labels = torch.tensor([lbl for _, lbl in dataset.samples])
+    counts = torch.bincount(labels)
+    weights = (1.0 / counts)[labels]
+    return WeightedRandomSampler(weights, num_samples=len(weights), replacement=True)
+
+
 def build_loaders(cfg):
     kw = dict(batch_size=cfg.batch_size, num_workers=cfg.num_workers, collate_fn=collate_fn)
     if cfg.dataset == "fakeavceleb":
         train_set = FakeAVCelebDataset(cfg.data_root, cfg.csv_path.replace("{split}", "train"))
         val_set   = FakeAVCelebDataset(cfg.data_root, cfg.csv_path.replace("{split}", "val"))
+        sampler = _balanced_sampler(train_set)
+        return DataLoader(train_set, sampler=sampler, **kw), DataLoader(val_set, shuffle=False, **kw)
     elif cfg.dataset == "ffplusplus":
         train_set = FFPlusPlusDataset(cfg.data_root, cfg.csv_path.replace("{split}", "train"))
         val_set   = FFPlusPlusDataset(cfg.data_root, cfg.csv_path.replace("{split}", "val"))
@@ -60,11 +69,14 @@ def train(cfg):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     train_loader, val_loader = build_loaders(cfg)
 
+    print(f"Training on {device}")
     model = AVDeepfakeDetector(
         embed_dim=cfg.embed_dim,
         freeze_visual=cfg.freeze_visual,
         num_classes=cfg.num_classes,
     ).to(device)
+    
+    print(f"Model parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
     optimizer = torch.optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()), lr=cfg.lr
     )
@@ -76,31 +88,31 @@ def train(cfg):
     train_losses, val_losses = [], []
     best_val_loss = float("inf")
 
+    print("start training...")
     for epoch in range(cfg.epochs):
         model.train()
         total_loss = 0.0
         for frames, mel, labels in train_loader:
             frames, mel, labels = frames.to(device), mel.to(device), labels.to(device)
             optimizer.zero_grad()
-            with autocast():
+            with torch.amp.autocast("cuda"):
                 logits, align_loss = model(frames, mel)
                 loss = criterion(logits, labels) + cfg.align_weight * align_loss
+                
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             scaler.step(optimizer)
             scaler.update()
             total_loss += loss.item()
+            
         scheduler.step()
-
         train_loss = total_loss / len(train_loader)
         val_loss, metrics = evaluate(model, val_loader, criterion, device, cfg.out_dir, cfg.num_classes, cfg.align_weight)
         train_losses.append(train_loss)
         val_losses.append(val_loss)
-
         metrics_str = " ".join(f"{k}={v:.4f}" for k, v in metrics.items())
         print(f"Epoch {epoch+1}/{cfg.epochs} | train_loss={train_loss:.4f} val_loss={val_loss:.4f} {metrics_str}")
-
         torch.save(model.state_dict(), os.path.join(cfg.out_dir, "ckpt_last.pt"))
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -115,8 +127,9 @@ def evaluate(model, loader, criterion, device, out_dir, num_classes, align_weigh
     with torch.no_grad():
         for frames, mel, labels in loader:
             frames, mel, labels = frames.to(device), mel.to(device), labels.to(device)
-            with autocast():
+            with torch.amp.autocast("cuda"):
                 logits, align_loss = model(frames, mel)
+                
             total_loss += (criterion(logits, labels) + align_weight * align_loss).item()
             probs = torch.softmax(logits, dim=1)
             all_preds.extend(probs.argmax(dim=1).cpu().tolist())
@@ -135,6 +148,7 @@ def evaluate(model, loader, criterion, device, out_dir, num_classes, align_weigh
         plot_confusion(all_labels, all_preds,
                        save_path=os.path.join(out_dir, "confusion.png"),
                        class_names=class_names)
+        
     return total_loss / len(loader), metrics
 
 
