@@ -5,8 +5,8 @@ import torch
 import torch.nn as nn
 from torch.cuda.amp import GradScaler
 from torch.utils.data import DataLoader, WeightedRandomSampler
-from src.data import MELDDataset, FakeAVCelebDataset, FFPlusPlusDataset
-from src.data.meld import EMOTION2ID
+from src.datautils import MELDDataset, FakeAVCelebDataset, FFPlusPlusDataset
+from src.datautils.meld import EMOTION2ID
 from src.models import AVDeepfakeDetector
 from src.utils import (
     evaluate_metrics, evaluate_metrics_multiclass,

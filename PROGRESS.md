@@ -20,14 +20,13 @@
 - [x] Mel 频谱提取（torchaudio）
 - [x] 基础训练循环 + seaborn 可视化（loss / confusion / ROC / PR）
 - [x] 消融实验框架（ablation.py）
-- [x] 代码审计（audit.md）：发现训练目标错位、缺一致性损失、缺 Deepfake 数据
 
 ## 进行中
 
-- [ ] **P0** 接入 FakeAVCeleb（src/data/fakeavceleb.py）→ 跑通二分类
-- [ ] **P0** 接入 FF++（src/data/ff_plus_plus.py）→ 跨操作泛化
-- [ ] **P1** 加 InfoNCE 对齐损失到 detector.py
-- [ ] **P1** 全局 seed + best-ckpt 保存 + AMP
+- [x] **P0** 接入 FakeAVCeleb（src/data/fakeavceleb.py）→ 跑通二分类
+- [x] **P0** 接入 FF++（src/data/ff_plus_plus.py）→ 跨操作泛化
+- [x] **P1** 加 InfoNCE 对齐损失到 detector.py
+- [x] **P1** 全局 seed + best-ckpt 保存 + AMP
 
 ## TODO
 
