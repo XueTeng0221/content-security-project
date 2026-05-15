@@ -16,7 +16,8 @@ _DEFAULTS = dict(
     dataset="meld", data_root="data/MELD", csv_path="",
     out_dir="outputs/ablation",
     epochs=10, batch_size=8, lr=1e-4, embed_dim=256,
-    num_workers=4, num_classes=7, align_weight=0.1, seed=42,
+    freeze_visual=True, num_workers=4, num_classes=7,
+    align_weight=0.1, seed=42,
 )
 
 VARIANTS = {
@@ -36,10 +37,12 @@ def _forward(model, frames, mel):
 
 def run_variant(name, model_cls, loaders, device, cfg):
     set_seed(cfg.seed)
-    model = model_cls(embed_dim=cfg.embed_dim, num_classes=cfg.num_classes).to(device)
-    optimizer = torch.optim.AdamW(
-        filter(lambda p: p.requires_grad, model.parameters()), lr=cfg.lr
-    )
+    kwargs = dict(embed_dim=cfg.embed_dim, num_classes=cfg.num_classes)
+    if model_cls is AVDeepfakeDetector:
+        kwargs["freeze_visual"] = cfg.freeze_visual
+        
+    model = model_cls(**kwargs).to(device)
+    optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=cfg.lr)
     criterion = nn.CrossEntropyLoss()
     scaler = GradScaler()
 
@@ -78,9 +81,7 @@ def run_variant(name, model_cls, loaders, device, cfg):
 
 
 def plot_ablation(results: dict, out_dir: str):
-    rows = [{"variant": k, "metric": m, "value": v}
-            for k, metrics in results.items()
-            for m, v in metrics.items()]
+    rows = [{"variant": k, "metric": m, "value": v} for k, metrics in results.items() for m, v in metrics.items()]
     df = pd.DataFrame(rows)
     fig, ax = plt.subplots(figsize=(8, 4))
     sns.barplot(data=df, x="variant", y="value", hue="metric", ax=ax)
@@ -90,18 +91,16 @@ def plot_ablation(results: dict, out_dir: str):
     fig.tight_layout()
     fig.savefig(os.path.join(out_dir, "ablation.png"), dpi=150)
     plt.close(fig)
-    df.pivot(index="variant", columns="metric", values="value").to_csv(
-        os.path.join(out_dir, "ablation.csv")
-    )
+    df.pivot(index="variant", columns="metric", values="value").to_csv(os.path.join(out_dir, "ablation.csv"))
 
 
 if __name__ == "__main__":
     cfg = load_config(_DEFAULTS)
+    cfg.out_dir = os.path.join(cfg.out_dir, "ablation")
     os.makedirs(cfg.out_dir, exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     train_loader, val_loader = build_loaders(cfg)
     loaders = {"train": train_loader, "val": val_loader}
-    results = {name: run_variant(name, cls, loaders, device, cfg)
-               for name, cls in VARIANTS.items()}
+    results = {name: run_variant(name, cls, loaders, device, cfg) for name, cls in VARIANTS.items()}
     plot_ablation(results, cfg.out_dir)
     print(f"\nSaved ablation.png and ablation.csv to {cfg.out_dir}")

@@ -4,7 +4,17 @@
 @REM if errorlevel 1 (echo Tests failed & exit /b 1)
 
 echo === Step 1: Train ===
-python -m src.train --config configs/train.yaml
+
+echo === Training on FFPlusPlus dataset ===
+python -m src.train --config configs/ffpp.yaml
+
+echo === Training on FakeAVCeleb dataset ===
+python -m src.train --config configs/favc.yaml
 
 echo === Step 2: Ablation ===
-python -m src.ablation --config configs/ablation.yaml
+
+echo == Ablation on FFPlusPlus dataset ==
+python -m src.ablation --config configs/ffpp.yaml
+
+echo == Ablation on FakeAVCeleb dataset ==
+python -m src.ablation --config configs/favc.yaml

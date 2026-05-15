@@ -1,0 +1,13 @@
+dataset: ffplusplus   # meld | fakeavceleb | ffplusplus
+data_root: data/FaceForensics++_C23
+csv_path: data/FaceForensics++_C23/{split}.csv
+out_dir: outputs/ffplusplus
+epochs: 20
+batch_size: 8
+lr: 1e-4
+embed_dim: 256
+freeze_visual: true
+num_workers: 4
+num_classes: 2
+align_weight: 0.1
+seed: 42

@@ -35,9 +35,7 @@ def set_seed(seed: int):
 def collate_fn(batch):
     frames, mels, labels = zip(*batch)
     max_t = max(m.shape[-1] for m in mels)
-    mels_padded = torch.stack([
-        torch.nn.functional.pad(m, (0, max_t - m.shape[-1])) for m in mels
-    ])
+    mels_padded = torch.stack([torch.nn.functional.pad(m, (0, max_t - m.shape[-1])) for m in mels])
     return torch.stack(frames), mels_padded, torch.stack(labels)
 
 
@@ -77,13 +75,10 @@ def train(cfg):
     ).to(device)
     
     print(f"Model parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
-    optimizer = torch.optim.AdamW(
-        filter(lambda p: p.requires_grad, model.parameters()), lr=cfg.lr
-    )
+    optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=cfg.lr)
     criterion = nn.CrossEntropyLoss()
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg.epochs)
     scaler = GradScaler()
-
     os.makedirs(cfg.out_dir, exist_ok=True)
     train_losses, val_losses = [], []
     best_val_loss = float("inf")
