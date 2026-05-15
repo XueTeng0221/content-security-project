@@ -1,7 +1,8 @@
-dataset: ffplusplus   # meld | fakeavceleb | ffplusplus
+dataset: ffplusplus
 data_root: data/FaceForensics++_C23
-csv_path: data/FaceForensics++_C23/{split}.csv
+csv_path: data/FaceForensics++_C23/csv/{split}.csv
 out_dir: outputs/ffplusplus
+pretrain_ckpt: outputs/meld/pretrained_encoders.pt
 epochs: 20
 batch_size: 8
 lr: 1e-4

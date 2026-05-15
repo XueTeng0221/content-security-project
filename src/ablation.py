@@ -8,22 +8,25 @@ import matplotlib.pyplot as plt
 
 from src.models import AVDeepfakeDetector
 from src.models.ablation_models import VisualOnlyDetector, AudioOnlyDetector, ConcatFusionDetector
-from src.utils import evaluate_metrics, evaluate_metrics_multiclass
+from src.utils import evaluate_metrics
 from src.utils.config import load_config
-from src.train import set_seed, build_loaders
+from src.train import set_seed, build_loaders, _load_pretrained_encoders
 
 _DEFAULTS = dict(
-    dataset="meld", data_root="data/MELD", csv_path="",
+    dataset="fakeavceleb",
+    data_root="data/FakeAVCeleb_v1.2/FakeAVCeleb_v1.2",
+    csv_path="data/FakeAVCeleb_v1.2/{split}.csv",
     out_dir="outputs/ablation",
+    pretrain_ckpt="outputs/meld/pretrained_encoders.pt",
     epochs=10, batch_size=8, lr=1e-4, embed_dim=256,
-    freeze_visual=True, num_workers=4, num_classes=7,
+    freeze_visual=True, num_workers=4, num_classes=2,
     align_weight=0.1, seed=42,
 )
 
 VARIANTS = {
-    "visual_only":    VisualOnlyDetector,
-    "audio_only":     AudioOnlyDetector,
-    "concat_fusion":  ConcatFusionDetector,
+    "visual_only":     VisualOnlyDetector,
+    "audio_only":      AudioOnlyDetector,
+    "concat_fusion":   ConcatFusionDetector,
     "cross_attention": AVDeepfakeDetector,
 }
 
@@ -40,8 +43,12 @@ def run_variant(name, model_cls, loaders, device, cfg):
     kwargs = dict(embed_dim=cfg.embed_dim, num_classes=cfg.num_classes)
     if model_cls is AVDeepfakeDetector:
         kwargs["freeze_visual"] = cfg.freeze_visual
-        
     model = model_cls(**kwargs).to(device)
+
+    # Load pretrained AV encoders when available and the variant uses them
+    if cfg.pretrain_ckpt and os.path.exists(cfg.pretrain_ckpt) and model_cls is not AudioOnlyDetector:
+        _load_pretrained_encoders(model, cfg.pretrain_ckpt)
+
     optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=cfg.lr)
     criterion = nn.CrossEntropyLoss()
     scaler = GradScaler()
@@ -61,27 +68,24 @@ def run_variant(name, model_cls, loaders, device, cfg):
             scaler.update()
 
     model.eval()
-    all_labels, all_preds, all_scores = [], [], []
+    all_labels, all_scores = [], []
     with torch.no_grad():
         for frames, mel, labels in loaders["val"]:
             frames, mel, labels = frames.to(device), mel.to(device), labels.to(device)
             with torch.amp.autocast("cuda"):
                 logits, _ = _forward(model, frames, mel)
-                
             probs = torch.softmax(logits, dim=1)
-            all_preds.extend(probs.argmax(dim=1).cpu().tolist())
+            all_scores.extend(probs[:, 1].cpu().tolist())
             all_labels.extend(labels.cpu().tolist())
-            if cfg.num_classes == 2:
-                all_scores.extend(probs[:, 1].cpu().tolist())
 
-    metrics = (evaluate_metrics(all_labels, all_scores) if cfg.num_classes == 2
-               else evaluate_metrics_multiclass(all_labels, all_preds))
+    metrics = evaluate_metrics(all_labels, all_scores)
     print(f"[{name}] " + "  ".join(f"{k}={v:.4f}" for k, v in metrics.items()))
     return metrics
 
 
 def plot_ablation(results: dict, out_dir: str):
-    rows = [{"variant": k, "metric": m, "value": v} for k, metrics in results.items() for m, v in metrics.items()]
+    rows = [{"variant": k, "metric": m, "value": v}
+            for k, metrics in results.items() for m, v in metrics.items()]
     df = pd.DataFrame(rows)
     fig, ax = plt.subplots(figsize=(8, 4))
     sns.barplot(data=df, x="variant", y="value", hue="metric", ax=ax)
@@ -91,16 +95,17 @@ def plot_ablation(results: dict, out_dir: str):
     fig.tight_layout()
     fig.savefig(os.path.join(out_dir, "ablation.png"), dpi=150)
     plt.close(fig)
-    df.pivot(index="variant", columns="metric", values="value").to_csv(os.path.join(out_dir, "ablation.csv"))
+    df.pivot(index="variant", columns="metric", values="value").to_csv(
+        os.path.join(out_dir, "ablation.csv"))
 
 
 if __name__ == "__main__":
     cfg = load_config(_DEFAULTS)
-    cfg.out_dir = os.path.join(cfg.out_dir, "ablation")
     os.makedirs(cfg.out_dir, exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     train_loader, val_loader = build_loaders(cfg)
     loaders = {"train": train_loader, "val": val_loader}
-    results = {name: run_variant(name, cls, loaders, device, cfg) for name, cls in VARIANTS.items()}
+    results = {name: run_variant(name, cls, loaders, device, cfg)
+               for name, cls in VARIANTS.items()}
     plot_ablation(results, cfg.out_dir)
     print(f"\nSaved ablation.png and ablation.csv to {cfg.out_dir}")

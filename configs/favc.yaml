@@ -1,7 +1,8 @@
-dataset: fakeavceleb   # meld | fakeavceleb | ffplusplus
+dataset: fakeavceleb
 data_root: data/FakeAVCeleb_v1.2/FakeAVCeleb_v1.2
 csv_path: data/FakeAVCeleb_v1.2/{split}.csv
 out_dir: outputs/fakeavceleb
+pretrain_ckpt: outputs/meld/pretrained_encoders.pt
 epochs: 20
 batch_size: 8
 lr: 1e-4
